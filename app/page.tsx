@@ -7,8 +7,12 @@ import "bootstrap/dist/css/bootstrap.min.css";
 const Page = () => {
   const [question, setQuestion] = useState("ポケモンの名前は何ですか？");
   const [imageUrl, setImageUrl] = useState("");
-  const [choices, setChoices] = useState<string[]>([]);
-  const [correctName, setCorrectName] = useState("");
+  const [choices, setChoices] = useState<{ en: string; ja: string }[]>([]);
+  const [correctName, setCorrectName] = useState<{ en: string; ja: string }>({
+    en: "",
+    ja: "",
+  });
+  const [isJapanese, setIsJapanese] = useState(false); // 言語切り替え用
 
   // ポケモンデータ取得関数
   const getPokemonData = useCallback(async (id: number) => {
@@ -21,6 +25,7 @@ const Page = () => {
     }
 
     try {
+      // ポケモンの基本情報（英語名・画像・タイプ）を取得
       const response = await fetch(`${pokeApiBaseUrl}/pokemon/${id}`);
       if (!response.ok) throw new Error("データ取得失敗");
       const data: {
@@ -28,7 +33,27 @@ const Page = () => {
         types: { type: { name: string } }[];
         sprites: { front_default: string | null };
       } = await response.json();
-      return data;
+
+      // 日本語名を取得
+      const speciesResponse = await fetch(
+        `${pokeApiBaseUrl}/pokemon-species/${id}`
+      );
+      if (!speciesResponse.ok) throw new Error("日本語データ取得失敗");
+      const speciesData: {
+        names: { language: { name: string }; name: string }[];
+      } = await speciesResponse.json();
+
+      const japaneseName =
+        speciesData.names.find((n) => n.language.name === "ja")?.name || "";
+
+      return {
+        name: {
+          en: data.name.charAt(0).toUpperCase() + data.name.slice(1), // 英語名の先頭を大文字に
+          ja: japaneseName,
+        },
+        types: data.types.map((t) => t.type.name),
+        imageUrl: data.sprites.front_default,
+      };
     } catch (error) {
       console.error("ポケモンデータ取得エラー:", error);
       return null;
@@ -51,32 +76,28 @@ const Page = () => {
     }
 
     const correctPokemon = pokemonData[Math.floor(Math.random() * 4)];
-    if (!correctPokemon || !correctPokemon.sprites.front_default) {
+    if (!correctPokemon || !correctPokemon.imageUrl) {
       console.error("正しいポケモンデータが取得できませんでした。");
       return;
     }
 
-    const correctName =
-      correctPokemon.name.charAt(0).toUpperCase() +
-      correctPokemon.name.slice(1);
-    setCorrectName(correctName);
-    setImageUrl(correctPokemon.sprites.front_default);
-    setChoices(
-      pokemonData.map((p) => p.name.charAt(0).toUpperCase() + p.name.slice(1))
-    );
+    setCorrectName(correctPokemon.name);
+    setImageUrl(correctPokemon.imageUrl);
+    setChoices(pokemonData.map((p) => p.name));
     setQuestion(
-      `このポケモンの名前は何ですか？ (タイプ: ${correctPokemon.types
-        .map((t) => t.type.name)
-        .join(", ")})`
+      `このポケモンの名前は何ですか？ (タイプ: ${correctPokemon.types.join(
+        ", "
+      )})`
     );
   }, [getPokemonData]);
 
   // ユーザーの選択をチェックする関数
   const checkAnswer = (selected: string) => {
-    if (selected.toLowerCase() === correctName.toLowerCase()) {
+    const correct = isJapanese ? correctName.ja : correctName.en;
+    if (selected === correct) {
       alert("正解！🎉");
     } else {
-      alert(`不正解！正しい答えは ${correctName} です。`);
+      alert(`不正解！正しい答えは ${correct} です。`);
     }
     askQuestion(); // 次の問題を出題
   };
@@ -95,14 +116,23 @@ const Page = () => {
           <p>画像がありません</p>
         )}
       </div>
+
+      {/* 言語切り替えボタン */}
+      <button
+        className="btn btn-secondary mb-3"
+        onClick={() => setIsJapanese(!isJapanese)}
+      >
+        {isJapanese ? "英語名で表示" : "日本語名で表示"}
+      </button>
+
       <div className="d-flex justify-content-center flex-wrap gap-2">
         {choices.map((choice, index) => (
           <button
             key={index}
             className="btn btn-primary"
-            onClick={() => checkAnswer(choice)}
+            onClick={() => checkAnswer(isJapanese ? choice.ja : choice.en)}
           >
-            {choice}
+            {isJapanese ? choice.ja : choice.en}
           </button>
         ))}
       </div>
